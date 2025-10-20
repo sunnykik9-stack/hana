@@ -191,6 +191,11 @@ def compute_synastry(req: SynastryReq):
         "notes": "MVP: RA-as-longitude approximation. Upgrade to true ecliptic + houses later."
     })
 from fastapi import HTTPException
+import os
+from openai import OpenAI
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+client = OpenAI(api_key=OPENAI_API_KEY)
 
 class ReadingReq(BaseModel):
     score: float
@@ -198,17 +203,17 @@ class ReadingReq(BaseModel):
 
 @app.post("/generate-reading")
 def generate_reading(req: ReadingReq):
-    if not OPENAI_API_KEY:
-        raise HTTPException(status_code=500, detail="OPENAI_API_KEY not set")
+    try:
+        if not OPENAI_API_KEY:
+            raise RuntimeError("OPENAI_API_KEY not set")
 
-    # 프롬프트: 간결/안전
-    bullets = []
-    for x in req.aspects_top[:6]:
-        pA, pB = x["bodies"]
-        bullets.append(f"{pA} {x['type']} {pB} (orb {x['orb']}°, {x['score_contrib']:+.2f})")
-    bullet_text = "\n".join([f"- {b}" for b in bullets])
+        bullets = []
+        for x in req.aspects_top[:6]:
+            pA, pB = x["bodies"]
+            bullets.append(f"{pA} {x['type']} {pB} (orb {x['orb']}°, {x['score_contrib']:+.2f})")
+        bullet_text = "\n".join([f"- {b}" for b in bullets])
 
-    prompt = f"""
+        prompt = f"""
 너는 시나스트리(점성 궁합) 해석가다. 아래 데이터를 참고해 한국어로 4~6개 핵심 포인트를 간결히 설명하고,
 마지막에 2줄 요약을 넣어라. 단정적 예언/운명 규정은 피하고, ‘경향’과 ‘활용 팁’ 중심으로 말해라.
 
@@ -218,12 +223,18 @@ def generate_reading(req: ReadingReq):
 {bullet_text}
 """
 
-    # 모델은 네 플랜에서 사용 가능한 것으로 지정
-    resp = client.responses.create(
-        model="gpt-4o-mini",  # 가능 모델로 바꿔도 됨
-        input=prompt,
-        max_output_tokens=500,
-        temperature=0.7,
-    )
-    text = resp.output_text
-    return {"reading": text}
+        resp = client.responses.create(
+            model="gpt-4o-mini",
+            input=prompt,
+            max_output_tokens=500,
+            temperature=0.7,
+        )
+        text = resp.output_text
+        return {"reading": text}
+
+    except Exception as e:
+        # Render 로그에서도 보이게
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"reading": None, "error": str(e)}, status_code=500)
+
