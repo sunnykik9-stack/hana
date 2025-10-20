@@ -5,3 +5,4 @@ python-dateutil
 pytz
 skyfield
 jinja2
+openai
