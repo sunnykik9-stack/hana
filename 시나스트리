@@ -1,0 +1,114 @@
+[project]
+name = "synastry-api"
+version = "0.1.0"
+dependencies = ["fastapi", "uvicorn[standard]", "pydantic>=2", "python-dateutil"]
+
+[tool.uvicorn]
+host = "0.0.0.0"
+port = 8000
+from fastapi import FastAPI
+from pydantic import BaseModel
+
+app = FastAPI()
+
+class Person(BaseModel):
+    name: str
+    date: str   # "YYYY-MM-DD"
+    time: str   # "HH:MM"
+    tz: str     # "Asia/Seoul"
+    lat: float | None = None
+    lon: float | None = None
+
+class SynastryReq(BaseModel):
+    personA: Person
+    personB: Person
+
+@app.get("/health")
+def health():
+    return {"ok": True}
+
+@app.post("/compute-synastry")
+def compute_synastry(req: SynastryReq):
+    # 아직은 더미 결과: MVP 단계에서 화면-데이터 흐름부터 확인
+    return {
+        "score": 72,
+        "top_aspects": [
+            {"type": "conjunction", "bodies": ["SunA", "MoonB"], "orb": 1.4, "impact": "strong bond"},
+            {"type": "trine", "bodies": ["VenusA", "MarsB"], "orb": 2.1, "impact": "attraction"},
+            {"type": "square", "bodies": ["MercuryA", "SaturnB"], "orb": 2.8, "impact": "communication tests"}
+        ],
+        "summary": "감정적 연결이 강하고 끌림이 분명하지만, 말투와 책임감 부분에서 조율 필요."
+    }
+cd synastry-api
+python -m venv .venv && source .venv/bin/activate  # 윈도우: .venv\Scripts\activate
+pip install -e .
+uvicorn main:app --reload
+npm create next-app@latest synastry-web --typescript --eslint
+cd synastry-web
+npm install
+"use client";
+import { useState } from "react";
+
+type Person = { name: string; date: string; time: string; tz: string; lat?: number; lon?: number; };
+
+export default function Home() {
+  const [a, setA] = useState<Person>({ name:"A", date:"1990-05-10", time:"08:20", tz:"Asia/Seoul" });
+  const [b, setB] = useState<Person>({ name:"B", date:"1992-11-22", time:"23:45", tz:"Asia/Seoul" });
+  const [result, setResult] = useState<any>(null);
+  const [loading, setLoading] = useState(false);
+
+  const compute = async () => {
+    setLoading(true);
+    const res = await fetch(process.env.NEXT_PUBLIC_API_BASE + "/compute-synastry", {
+      method: "POST",
+      headers: { "Content-Type": "application/json"},
+      body: JSON.stringify({ personA: a, personB: b })
+    });
+    const data = await res.json();
+    setResult(data);
+    setLoading(false);
+  };
+
+  return (
+    <main className="p-6 max-w-2xl mx-auto">
+      <h1 className="text-2xl font-bold mb-4">Synastry MVP</h1>
+
+      <section className="grid grid-cols-1 gap-4">
+        <div className="p-4 rounded-xl border">
+          <h2 className="font-semibold mb-2">Person A</h2>
+          <input className="border p-2 w-full mb-2" placeholder="name" value={a.name} onChange={e=>setA({...a, name:e.target.value})}/>
+          <input className="border p-2 w-full mb-2" placeholder="YYYY-MM-DD" value={a.date} onChange={e=>setA({...a, date:e.target.value})}/>
+          <input className="border p-2 w-full mb-2" placeholder="HH:MM" value={a.time} onChange={e=>setA({...a, time:e.target.value})}/>
+          <input className="border p-2 w-full" placeholder="Asia/Seoul" value={a.tz} onChange={e=>setA({...a, tz:e.target.value})}/>
+        </div>
+
+        <div className="p-4 rounded-xl border">
+          <h2 className="font-semibold mb-2">Person B</h2>
+          <input className="border p-2 w-full mb-2" placeholder="name" value={b.name} onChange={e=>setB({...b, name:e.target.value})}/>
+          <input className="border p-2 w-full mb-2" placeholder="YYYY-MM-DD" value={b.date} onChange={e=>setB({...b, date:e.target.value})}/>
+          <input className="border p-2 w-full mb-2" placeholder="HH:MM" value={b.time} onChange={e=>setB({...b, time:e.target.value})}/>
+          <input className="border p-2 w-full" placeholder="Asia/Seoul" value={b.tz} onChange={e=>setB({...b, tz:e.target.value})}/>
+        </div>
+
+        <button onClick={compute} className="p-3 rounded-xl border font-semibold">
+          {loading ? "계산 중..." : "궁합 계산하기"}
+        </button>
+
+        {result && (
+          <div className="p-4 rounded-xl border">
+            <h3 className="font-semibold mb-2">결과</h3>
+            <p className="mb-2">스코어: {result.score}</p>
+            <ul className="list-disc pl-6">
+              {result.top_aspects?.map((x: any, i: number) => (
+                <li key={i}>{x.bodies.join(" × ")} — {x.type} (orb {x.orb}) · {x.impact}</li>
+              ))}
+            </ul>
+            <p className="mt-2 text-sm opacity-80">{result.summary}</p>
+          </div>
+        )}
+      </section>
+    </main>
+  );
+}
+NEXT_PUBLIC_API_BASE=http://localhost:8000
+npm run dev
