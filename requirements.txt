@@ -1,0 +1,7 @@
+fastapi
+uvicorn[standard]
+pydantic>=2
+python-dateutil
+pytz
+skyfield
+jinja2
