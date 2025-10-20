@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Synastry MVP</title>
+  <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+  <main class="container">
+    <h1>Synastry MVP</h1>
+    <p class="sub">두 사람의 출생 정보를 입력하고 결과를 확인해보세요.</p>
+
+    <section class="cards">
+      <div class="card">
+        <h2>Person A</h2>
+        <label>이름 <input id="a_name" placeholder="A"/></label>
+        <label>생년월일 <input id="a_date" placeholder="1990-05-10"/></label>
+        <label>출생시간 <input id="a_time" placeholder="08:20"/></label>
+        <label>시간대 <input id="a_tz" placeholder="Asia/Seoul" value="Asia/Seoul"/></label>
+      </div>
+
+      <div class="card">
+        <h2>Person B</h2>
+        <label>이름 <input id="b_name" placeholder="B"/></label>
+        <label>생년월일 <input id="b_date" placeholder="1992-11-22"/></label>
+        <label>출생시간 <input id="b_time" placeholder="23:45"/></label>
+        <label>시간대 <input id="b_tz" placeholder="Asia/Seoul" value="Asia/Seoul"/></label>
+      </div>
+    </section>
+
+    <button id="btn" class="primary">궁합 계산하기</button>
+
+    <section id="result" class="result" style="display:none;">
+      <h3>결과</h3>
+      <div id="score"></div>
+      <ul id="aspects"></ul>
+      <pre id="summary" class="summary"></pre>
+    </section>
+
+    <footer class="footer">
+      <small>MVP: 계산 정확도는 향후 개선 예정(황경 근사). · © Synastry MVP</small>
+    </footer>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
