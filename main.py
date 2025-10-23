@@ -1,8 +1,3 @@
-<section id="readingBox" class="result" style="display:none;">
-  <h3>GPT 해석</h3>
-  <pre id="reading" class="summary"></pre>
-</section>
-
 import os
 from functools import lru_cache
 from math import fmod
