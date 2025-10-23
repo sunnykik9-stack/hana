@@ -14,3 +14,11 @@ input{width:100%;padding:10px;border-radius:10px;border:1px solid #374151;backgr
 .summary{background:#0b0f14;color:#cbd5e1;padding:10px;border-radius:10px;border:1px dashed #334155;overflow:auto}
 .footer{margin-top:30px;opacity:.7}
 @media (max-width:720px){.cards{grid-template-columns:1fr}}
+.summary{white-space:pre-wrap; line-height:1.7}
+.aspects li{padding:6px 8px;border-bottom:1px solid #e5e7eb}
+.badge{display:inline-block;padding:2px 8px;border-radius:999px;font-size:12px;margin-right:8px;border:1px solid #e5e7eb}
+.badge.conjunction{background:#eef2ff;border-color:#c7d2fe}
+.badge.trine{background:#e0f2fe;border-color:#bae6fd}
+.badge.sextile{background:#dcfce7;border-color:#bbf7d0}
+.badge.square{background:#fee2e2;border-color:#fecaca}
+.badge.opposition{background:#fff7ed;border-color:#fed7aa}
