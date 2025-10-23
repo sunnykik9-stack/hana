@@ -1,20 +1,20 @@
 import os
-from fastapi import FastAPI, HTTPException
+from functools import lru_cache
+from math import fmod
+from typing import List, Dict
+
+import pytz
+from dateutil import parser
+from fastapi import FastAPI
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from dateutil import parser
-from typing import List, Dict
-from math import fmod
-import pytz
+from skyfield.api import load
 
 # --- OpenAI 연결 ---
 from openai import OpenAI
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 client = OpenAI(api_key=OPENAI_API_KEY)
-
-# --- Skyfield for astronomy ---
-from skyfield.api import load
 
 # ---------- FastAPI ----------
 app = FastAPI(title="Synastry MVP")
@@ -33,45 +33,40 @@ class SynastryReq(BaseModel):
     personA: Person
     personB: Person
 
-# ---------- Config ----------
-# 외행성 포함
+# ---------- Config (외행성 포함) ----------
 PLANETS = [
-    "Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn",
-    "Uranus","Neptune","Pluto"
+    "Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn",
+    "Uranus", "Neptune", "Pluto"
 ]
 
 ASPECTS = {"conjunction": 0, "sextile": 60, "square": 90, "trine": 120, "opposition": 180}
 
-# 기본 허용 오브(대략적 권장치)
 DEFAULT_ORB = {
     "Sun": 6.0, "Moon": 6.0, "Mercury": 5.0, "Venus": 5.0, "Mars": 5.0,
     "Jupiter": 4.0, "Saturn": 4.0,
-    "Uranus": 3.5, "Neptune": 3.5, "Pluto": 3.0
+    "Uranus": 3.5, "Neptune": 3.5, "Pluto": 3.0,
 }
 
-# 쌍 가중치(개인행성↑, 사회/외행성은 중간; 플루토/금·화는 강하게)
 PAIR_WEIGHT = {
-    # 개인행성–개인행성
-    ("Sun","Moon"): 20, ("Venus","Mars"): 18, ("Sun","Venus"): 12, ("Sun","Mars"): 10,
-    ("Moon","Venus"): 12, ("Moon","Mars"): 12, ("Mercury","Mercury"): 8,
-    ("Venus","Venus"): 6, ("Mars","Mars"): 6,
-    # 개인–사회/외행성 (대표 조합만 가중치 명시, 나머지는 디폴트 5 사용)
-    ("Sun","Jupiter"): 10, ("Sun","Saturn"): 11,
-    ("Moon","Jupiter"): 10, ("Moon","Saturn"): 11,
-    ("Venus","Jupiter"): 9, ("Mars","Jupiter"): 9,
-    ("Venus","Saturn"): 11, ("Mars","Saturn"): 11,
+    ("Sun", "Moon"): 20, ("Venus", "Mars"): 18, ("Sun", "Venus"): 12, ("Sun", "Mars"): 10,
+    ("Moon", "Venus"): 12, ("Moon", "Mars"): 12, ("Mercury", "Mercury"): 8,
+    ("Venus", "Venus"): 6, ("Mars", "Mars"): 6,
 
-    ("Sun","Uranus"): 10, ("Sun","Neptune"): 10, ("Sun","Pluto"): 14,
-    ("Moon","Uranus"): 10, ("Moon","Neptune"): 12, ("Moon","Pluto"): 14,
-    ("Venus","Uranus"): 12, ("Venus","Neptune"): 12, ("Venus","Pluto"): 15,
-    ("Mars","Uranus"): 12, ("Mars","Neptune"): 10, ("Mars","Pluto"): 16,
+    ("Sun", "Jupiter"): 10, ("Sun", "Saturn"): 11,
+    ("Moon", "Jupiter"): 10, ("Moon", "Saturn"): 11,
+    ("Venus", "Jupiter"): 9, ("Mars", "Jupiter"): 9,
+    ("Venus", "Saturn"): 11, ("Mars", "Saturn"): 11,
+
+    ("Sun", "Uranus"): 10, ("Sun", "Neptune"): 10, ("Sun", "Pluto"): 14,
+    ("Moon", "Uranus"): 10, ("Moon", "Neptune"): 12, ("Moon", "Pluto"): 14,
+    ("Venus", "Uranus"): 12, ("Venus", "Neptune"): 12, ("Venus", "Pluto"): 15,
+    ("Mars", "Uranus"): 12, ("Mars", "Neptune"): 10, ("Mars", "Pluto"): 16,
 }
 
 ASPECT_MULT = {
     "conjunction": 1.00, "trine": 0.85, "sextile": 0.70,
-    "square": -0.65, "opposition": -0.80
+    "square": -0.65, "opposition": -0.80,
 }
-
 
 # ---------- Utility ----------
 def _angle_wrap(deg: float) -> float:
@@ -92,9 +87,6 @@ def ordered_pair(a: str, b: str) -> tuple[str, str]:
     return tuple(sorted([a, b]))
 
 # ---------- Skyfield init (외행성 포함) ----------
-from functools import lru_cache
-from skyfield.api import load
-
 @lru_cache(maxsize=1)
 def get_ephem():
     ts = load.timescale()
@@ -114,18 +106,8 @@ def get_ephem():
     }
     return ts, earth, planet_map
 
-# 아래는 기존 코드의 ecliptic_longitudes 함수 일부 수정
-def ecliptic_longitudes(t):
-    ts, earth, planet_map = get_ephem()
-    longs = {}
-    observer = earth.at(t)
-    for name, body in planet_map.items():
-        app = observer.observe(body).apparent()
-        ra, dec, _ = app.radec()
-        longs[name] = _angle_wrap(ra.hours * 15.0)
-    return longs
-
 def to_ts(date_str: str, time_str: str, tz_name: str):
+    ts, _, _ = get_ephem()
     local = pytz.timezone(tz_name)
     dt_local = local.localize(parser.parse(f"{date_str} {time_str}"))
     dt_utc = dt_local.astimezone(pytz.utc)
@@ -133,12 +115,13 @@ def to_ts(date_str: str, time_str: str, tz_name: str):
                   dt_utc.hour, dt_utc.minute, dt_utc.second)
 
 def ecliptic_longitudes(t):
+    _, earth, planet_map = get_ephem()
     longs = {}
-    observer = EARTH.at(t)
-    for name, body in PLANET_MAP.items():
+    observer = earth.at(t)
+    for name, body in planet_map.items():
         app = observer.observe(body).apparent()
         ra, dec, _ = app.radec()
-        longs[name] = _angle_wrap(ra.hours * 15.0)
+        longs[name] = _angle_wrap(ra.hours * 15.0)  # RA→경도 근사
     return longs
 
 def detect_aspects(longsA: Dict[str, float], longsB: Dict[str, float]):
@@ -156,7 +139,7 @@ def detect_aspects(longsA: Dict[str, float], longsB: Dict[str, float]):
                         "type": aspect_name,
                         "exact_deg": round(d, 2),
                         "orb": round(delta, 2),
-                        "strength": round(k, 3)
+                        "strength": round(k, 3),
                     })
     aspects.sort(key=lambda x: x["strength"], reverse=True)
     return aspects
@@ -165,10 +148,10 @@ def score_synastry(aspects: List[Dict]) -> tuple[float, List[Dict]]:
     total = 0.0
     scored = []
     for a in aspects:
-        p1 = a["bodies"][0].replace("A","")
-        p2 = a["bodies"][1].replace("B","")
+        p1 = a["bodies"][0].replace("A", "")
+        p2 = a["bodies"][1].replace("B", "")
         pair = ordered_pair(p1, p2)
-        base = PAIR_WEIGHT.get(pair, 4)
+        base = PAIR_WEIGHT.get(pair, 5)  # 기본 가중치 5
         mult = ASPECT_MULT.get(a["type"], 0.4)
         s = base * mult * a["strength"]
         a_with = dict(a)
@@ -217,7 +200,7 @@ def compute_synastry(req: SynastryReq):
             "aspects_all_count": len(scored),
             "longitudes": {"A": longsA, "B": longsB},
             "summary": summary,
-            "notes": "MVP with outer planets"
+            "notes": "MVP with outer planets",
         })
     except Exception as e:
         import traceback
@@ -225,16 +208,6 @@ def compute_synastry(req: SynastryReq):
         return JSONResponse({"error": str(e)}, status_code=500)
 
 # ---------- GPT 해석 엔드포인트 ----------
-class ReadingReq(BaseModel):
-    score: float
-    aspects_top: List[Dict]
-
-# ---------- GPT 감성 해석 (Tumblr-style, 외행성 포함) ----------
-class ReadingReq(BaseModel):
-    score: float
-    aspects_top: List[Dict]
-
-# ---------- GPT 감성 해석 (Tumblr-style, 외행성 포함, per-aspect + overall) ----------
 class ReadingReq(BaseModel):
     score: float
     aspects_top: List[Dict]
