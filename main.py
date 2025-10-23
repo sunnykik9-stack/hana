@@ -34,21 +34,44 @@ class SynastryReq(BaseModel):
     personB: Person
 
 # ---------- Config ----------
-PLANETS = ["Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn"]
+# 외행성 포함
+PLANETS = [
+    "Sun","Moon","Mercury","Venus","Mars","Jupiter","Saturn",
+    "Uranus","Neptune","Pluto"
+]
+
 ASPECTS = {"conjunction": 0, "sextile": 60, "square": 90, "trine": 120, "opposition": 180}
+
+# 기본 허용 오브(대략적 권장치)
 DEFAULT_ORB = {
-    "Sun": 6.0, "Moon": 6.0, "Mercury": 5.0, "Venus": 5.0,
-    "Mars": 5.0, "Jupiter": 4.0, "Saturn": 4.0
+    "Sun": 6.0, "Moon": 6.0, "Mercury": 5.0, "Venus": 5.0, "Mars": 5.0,
+    "Jupiter": 4.0, "Saturn": 4.0,
+    "Uranus": 3.5, "Neptune": 3.5, "Pluto": 3.0
 }
+
+# 쌍 가중치(개인행성↑, 사회/외행성은 중간; 플루토/금·화는 강하게)
 PAIR_WEIGHT = {
+    # 개인행성–개인행성
     ("Sun","Moon"): 20, ("Venus","Mars"): 18, ("Sun","Venus"): 12, ("Sun","Mars"): 10,
     ("Moon","Venus"): 12, ("Moon","Mars"): 12, ("Mercury","Mercury"): 8,
     ("Venus","Venus"): 6, ("Mars","Mars"): 6,
+    # 개인–사회/외행성 (대표 조합만 가중치 명시, 나머지는 디폴트 5 사용)
+    ("Sun","Jupiter"): 10, ("Sun","Saturn"): 11,
+    ("Moon","Jupiter"): 10, ("Moon","Saturn"): 11,
+    ("Venus","Jupiter"): 9, ("Mars","Jupiter"): 9,
+    ("Venus","Saturn"): 11, ("Mars","Saturn"): 11,
+
+    ("Sun","Uranus"): 10, ("Sun","Neptune"): 10, ("Sun","Pluto"): 14,
+    ("Moon","Uranus"): 10, ("Moon","Neptune"): 12, ("Moon","Pluto"): 14,
+    ("Venus","Uranus"): 12, ("Venus","Neptune"): 12, ("Venus","Pluto"): 15,
+    ("Mars","Uranus"): 12, ("Mars","Neptune"): 10, ("Mars","Pluto"): 16,
 }
+
 ASPECT_MULT = {
     "conjunction": 1.00, "trine": 0.85, "sextile": 0.70,
     "square": -0.65, "opposition": -0.80
 }
+
 
 # ---------- Utility ----------
 def _angle_wrap(deg: float) -> float:
@@ -68,15 +91,39 @@ def linear_falloff(delta: float, allow: float) -> float:
 def ordered_pair(a: str, b: str) -> tuple[str, str]:
     return tuple(sorted([a, b]))
 
-# ---------- Skyfield ----------
-ts = load.timescale()
-eph = load("de421.bsp")
-EARTH = eph["earth"]
-PLANET_MAP = {
-    "Sun": eph["sun"], "Moon": eph["moon"], "Mercury": eph["mercury"],
-    "Venus": eph["venus"], "Mars": eph["mars"],
-    "Jupiter": eph["jupiter barycenter"], "Saturn": eph["saturn barycenter"]
-}
+# ---------- Skyfield init (외행성 포함) ----------
+from functools import lru_cache
+from skyfield.api import load
+
+@lru_cache(maxsize=1)
+def get_ephem():
+    ts = load.timescale()
+    eph = load("de421.bsp")
+    earth = eph["earth"]
+    planet_map = {
+        "Sun": eph["sun"],
+        "Moon": eph["moon"],
+        "Mercury": eph["mercury"],
+        "Venus": eph["venus"],
+        "Mars": eph["mars"],
+        "Jupiter": eph["jupiter barycenter"],
+        "Saturn": eph["saturn barycenter"],
+        "Uranus": eph["uranus barycenter"],
+        "Neptune": eph["neptune barycenter"],
+        "Pluto": eph["pluto barycenter"],
+    }
+    return ts, earth, planet_map
+
+# 아래는 기존 코드의 ecliptic_longitudes 함수 일부 수정
+def ecliptic_longitudes(t):
+    ts, earth, planet_map = get_ephem()
+    longs = {}
+    observer = earth.at(t)
+    for name, body in planet_map.items():
+        app = observer.observe(body).apparent()
+        ra, dec, _ = app.radec()
+        longs[name] = _angle_wrap(ra.hours * 15.0)
+    return longs
 
 def to_ts(date_str: str, time_str: str, tz_name: str):
     local = pytz.timezone(tz_name)
@@ -176,51 +223,56 @@ class ReadingReq(BaseModel):
     score: float
     aspects_top: List[Dict]
 
+# ---------- GPT 감성 해석 (Tumblr-style, 외행성 포함, per-aspect + overall) ----------
+class ReadingReq(BaseModel):
+    score: float
+    aspects_top: List[Dict]
+
 @app.post("/generate-reading")
 def generate_reading(req: ReadingReq):
     try:
         if not OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY not set")
 
-        # 핵심 상호작용 정리
-        bullets = []
-        for x in req.aspects_top[:10]:  # 최대 10개까지 반영
+        topN = min(6, len(req.aspects_top))
+        picked = req.aspects_top[:topN]
+
+        lines = []
+        for i, x in enumerate(picked, start=1):
             pA, pB = x["bodies"]
-            bullets.append(f"{pA} {x['type']} {pB} (orb {x['orb']}°, {x['score_contrib']:+.2f})")
-        bullet_text = "\n".join([f"- {b}" for b in bullets])
+            lines.append(f"{i}. {pA} {x['type']} {pB} | orb {x['orb']}° | contrib {x['score_contrib']:+.2f}")
+        bullet_text = "\n".join(lines)
 
-        # ✨ 감성형 프롬프트
         prompt = f"""
-너는 시나스트리(점성 궁합)를 예술적으로 해석하는 점성 작가다.
-아래 데이터를 참고하여 두 사람의 관계를 시적이고 감정적으로 해석하되, 과장하거나 운명론적으로 단정 짓지 말아라.
-해석은 **최소 10문장 이상**으로, 각 문장은 감정과 상징이 어우러지되, 실제 관계의 심리적 흐름을 드러내야 한다.
+너는 시나스트리(점성 궁합)를 시적으로 해석하는 작가다. 아래 제공된 상위 상호작용 각각을
+**최소 1,000자 이상**의 풍부한 한국어 문단으로 해석하라. Tumblr의 점성술 블로그처럼 감정선과 은유가 살아 있어야 한다.
+과장/운명 단정 금지. 각 문단에는 (1) 관계가 주는 느낌, (2) 심리/행동 패턴, (3) 배움/조언을 포함한다.
+또한 외행성(천왕성·해왕성·명왕성)의 상징은 ‘자유/각성’, ‘영감/포용’, ‘변화/재생’ 맥락으로 자연스럽게 녹여쓴다.
 
-규칙:
-1. 문체는 Tumblr의 점성술 블로그처럼 부드럽고 은유적이며 감정선이 있다.
-2. 각 상호작용은 관계의 느낌, 감정의 방향, 배움의 의미를 중심으로 설명한다.
-3. 외행성(천왕성·해왕성·명왕성)의 영향은 ‘변화, 영감, 재생’의 상징으로 표현하라.
-4. 결론 부분에는 이 관계가 서로에게 남길 정서적 의미를 2~3문장으로 요약한다.
-5. 해석 전체는 자연스럽게 이어지는 하나의 이야기처럼 구성한다.
+마지막에는 **전체 해석**을 별도 문단으로 작성하라(최소 8문장).
+전체 해석에는 개별 요소들이 한 흐름으로 어떻게 엮이는지, 관계가 남기는 정서적 의미와 성장의 방향을 제시한다.
+
+출력 형식(마크다운):
+### 1. [bodies] — [aspect]
+(최소 1,000자 문단)
+
+### 2. ...
+(각 상호작용마다 위와 같은 형식으로 문단 생성)
+
+### 전체 해석
+(최소 8문장 이상의 마무리 문단)
 
 [관계 데이터]
 - 전체 스코어: {req.score}
-- 주요 상호작용:
+- 상위 상호작용:
 {bullet_text}
-
-출력 예시(참고 스타일):
-두 사람의 별자리는 오래된 별빛이 다시 만나는 것처럼 서로를 알아본다.
-태양과 달의 만남은 내면의 중심을 따뜻하게 밝히고, 금성과 화성의 교차는 숨겨진 열정을 일깨운다.
-토성과 목성은 서로의 꿈을 다르게 해석하지만, 그 차이 속에서 성장의 씨앗이 싹튼다.
-천왕성과 해왕성의 전류는 관계에 자유와 신비를 더하고, 명왕성은 서로의 그림자를 비추며 변화의 불을 붙인다.
-결국 이 관계는 서로를 통해 자신을 발견하는 긴 여정이다.
 """
 
-        # GPT 요청
         resp = client.responses.create(
             model="gpt-4o-mini",
             input=prompt,
-            max_output_tokens=900,
-            temperature=0.8,
+            max_output_tokens=3200,
+            temperature=0.85,
         )
         return {"reading": resp.output_text}
 
