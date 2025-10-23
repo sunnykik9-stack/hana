@@ -34,12 +34,17 @@
     <section id="result" class="result" style="display:none;">
       <h3>결과</h3>
       <div id="score"></div>
-      <ul id="aspects"></ul>
+      <ul id="aspects" class="aspects"></ul>
       <pre id="summary" class="summary"></pre>
+    </section>
+
+    <!-- GPT 해석 영역 -->
+    <section id="readingBox" class="result" style="display:none;">
+      <h3>GPT 해석</h3>
+      <pre id="reading" class="summary"></pre>
     </section>
   </main>
 
-  <!-- 단일 스크립트: 계산 + GPT 해석 -->
   <script>
     async function compute() {
       const a = {
@@ -55,50 +60,72 @@
         tz:   document.getElementById('b_tz').value   || 'Asia/Seoul',
       };
 
+      // 간단 검증
+      const must = v => v && v.trim().length > 0;
+      if (!must(a.date) || !must(a.time) || !must(b.date) || !must(b.time)) {
+        alert('생년월일과 출생시간을 모두 입력해 주세요.');
+        return;
+      }
+
       const btn = document.getElementById('btn');
+      const resultBox  = document.getElementById('result');
+      const scoreEl    = document.getElementById('score');
+      const aspectsEl  = document.getElementById('aspects');
+      const summaryEl  = document.getElementById('summary');
+      const readingBox = document.getElementById('readingBox');
+      const readingEl  = document.getElementById('reading');
+
       btn.disabled = true;
       btn.innerText = '계산 중...';
 
       try {
-// 1) 기본 계산
-const r1 = await fetch('/compute-synastry', {
-  method:'POST',
-  headers:{'Content-Type':'application/json'},
-  body: JSON.stringify({ personA:a, personB:b })
-});
+        // 1) 기본 계산
+        const r1 = await fetch('/compute-synastry', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ personA:a, personB:b })
+        });
 
-// JSON 파싱 전에 성공 여부 확인
-const body1 = await r1.text();
-if (!r1.ok) {
-  throw new Error(`compute-synastry ${r1.status}: ${body1.slice(0,200)}`);
-}
-const data = JSON.parse(body1);
+        const body1 = await r1.text();               // 먼저 text로 받음
+        if (!r1.ok) throw new Error(`compute-synastry ${r1.status}: ${body1.slice(0,300)}`);
+        const data = JSON.parse(body1);              // 성공이면 JSON 파싱
 
-// ... 기존 렌더링 코드 ...
+        // 결과 렌더링
+        resultBox.style.display = 'block';
+        scoreEl.textContent = `스코어: ${data.score}`;
 
-// 2) GPT 해석
-const r2 = await fetch('/generate-reading', {
-  method:'POST',
-  headers:{'Content-Type':'application/json'},
-  body: JSON.stringify({ score: data.score, aspects_top: data.aspects_top })
-});
+        aspectsEl.innerHTML = (data.aspects_top || []).map(x => {
+          const sign = x.score_contrib >= 0 ? '+' : '';
+          return `<li>
+            <span class="badge ${x.type}">${x.type}</span>
+            <strong>${x.bodies.join(' × ')}</strong>
+            <span style="opacity:.8">· orb ${x.orb}</span>
+            <span style="float:right;opacity:.9">${sign}${x.score_contrib}</span>
+          </li>`;
+        }).join('');
 
-const body2 = await r2.text();
-let rr;
-try { rr = JSON.parse(body2); }
-catch { rr = { reading: null, error: body2 }; }
+        summaryEl.textContent = data.summary || '';
 
-if (!r2.ok || !rr.reading) {
-  // 친절한 에러 표기
-  readingBox.style.display='block';
-  reading.textContent = rr.error || body2 || '(해석 생성 중 오류)';
-} else {
-  readingBox.style.display='block';
-  reading.textContent = rr.reading;
-}
+        // 2) GPT 해석
+        const r2 = await fetch('/generate-reading', {
+          method:'POST',
+          headers:{'Content-Type':'application/json'},
+          body: JSON.stringify({ score: data.score, aspects_top: data.aspects_top })
+        });
+
+        const body2 = await r2.text();
+        let rr;
+        try { rr = JSON.parse(body2); } catch { rr = { reading: null, error: body2 }; }
+
+        readingBox.style.display = 'block';
+        if (!r2.ok || !rr.reading) {
+          readingEl.textContent = rr.error || body2 || '(해석 생성 중 오류)';
+        } else {
+          readingEl.textContent = rr.reading;
+        }
 
       } catch (e) {
-        alert('에러: ' + e);
+        alert('에러: ' + e.message);
       } finally {
         btn.disabled = false;
         btn.innerText = '궁합 계산하기';
