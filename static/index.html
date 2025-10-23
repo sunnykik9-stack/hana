@@ -60,43 +60,42 @@
       btn.innerText = '계산 중...';
 
       try {
-        // 1) 기본 계산
-        const res = await fetch('/compute-synastry', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ personA: a, personB: b })
-        });
-        const data = await res.json();
+// 1) 기본 계산
+const r1 = await fetch('/compute-synastry', {
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body: JSON.stringify({ personA:a, personB:b })
+});
 
-        document.getElementById('result').style.display = 'block';
-        document.getElementById('score').innerText = `스코어: ${data.score}`;
-        const ul = document.getElementById('aspects');
-        ul.innerHTML = '';
-        (data.aspects_top || []).forEach(x => {
-          const li = document.createElement('li');
-          li.textContent =
-            `${x.bodies.join(' × ')} — ${x.type} (orb ${x.orb}) · ${x.score_contrib >= 0 ? '+' : ''}${x.score_contrib}`;
-          ul.appendChild(li);
-        });
-        document.getElementById('summary').innerText = data.summary;
+// JSON 파싱 전에 성공 여부 확인
+const body1 = await r1.text();
+if (!r1.ok) {
+  throw new Error(`compute-synastry ${r1.status}: ${body1.slice(0,200)}`);
+}
+const data = JSON.parse(body1);
 
-        // 2) GPT 해석
-        const r = await fetch('/generate-reading', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ score: data.score, aspects_top: data.aspects_top })
-        });
-        const rr = await r.json();
+// ... 기존 렌더링 코드 ...
 
-        let readingBox = document.getElementById('reading');
-        if (!readingBox) {
-          readingBox = document.createElement('div');
-          readingBox.id = 'reading';
-          readingBox.className = 'result';
-          document.querySelector('main').appendChild(readingBox);
-        }
-        readingBox.innerHTML = `<h3>GPT 해석</h3>
-          <pre class="summary">${rr.reading || `(해석 생성 실패)\n${rr.error || ''}`}</pre>`;
+// 2) GPT 해석
+const r2 = await fetch('/generate-reading', {
+  method:'POST',
+  headers:{'Content-Type':'application/json'},
+  body: JSON.stringify({ score: data.score, aspects_top: data.aspects_top })
+});
+
+const body2 = await r2.text();
+let rr;
+try { rr = JSON.parse(body2); }
+catch { rr = { reading: null, error: body2 }; }
+
+if (!r2.ok || !rr.reading) {
+  // 친절한 에러 표기
+  readingBox.style.display='block';
+  reading.textContent = rr.error || body2 || '(해석 생성 중 오류)';
+} else {
+  readingBox.style.display='block';
+  reading.textContent = rr.reading;
+}
 
       } catch (e) {
         alert('에러: ' + e);
