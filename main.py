@@ -171,32 +171,56 @@ class ReadingReq(BaseModel):
     score: float
     aspects_top: List[Dict]
 
+# ---------- GPT 감성 해석 (Tumblr-style, 외행성 포함) ----------
+class ReadingReq(BaseModel):
+    score: float
+    aspects_top: List[Dict]
+
 @app.post("/generate-reading")
 def generate_reading(req: ReadingReq):
     try:
         if not OPENAI_API_KEY:
             raise RuntimeError("OPENAI_API_KEY not set")
 
-        bullets = [f"- {x['bodies'][0]} {x['type']} {x['bodies'][1]} "
-                   f"(orb {x['orb']}°, {x['score_contrib']:+.2f})"
-                   for x in req.aspects_top[:6]]
-        bullet_text = "\n".join(bullets)
+        # 핵심 상호작용 정리
+        bullets = []
+        for x in req.aspects_top[:10]:  # 최대 10개까지 반영
+            pA, pB = x["bodies"]
+            bullets.append(f"{pA} {x['type']} {pB} (orb {x['orb']}°, {x['score_contrib']:+.2f})")
+        bullet_text = "\n".join([f"- {b}" for b in bullets])
 
+        # ✨ 감성형 프롬프트
         prompt = f"""
-너는 시나스트리(점성 궁합) 해석가다. 아래 데이터를 참고해 한국어로 4~6개 핵심 포인트를 간결히 설명하고,
-마지막에 2줄 요약을 넣어라. 단정적 예언/운명 규정은 피하고, ‘경향’과 ‘활용 팁’ 중심으로 말해라.
+너는 시나스트리(점성 궁합)를 예술적으로 해석하는 점성 작가다.
+아래 데이터를 참고하여 두 사람의 관계를 시적이고 감정적으로 해석하되, 과장하거나 운명론적으로 단정 짓지 말아라.
+해석은 **최소 10문장 이상**으로, 각 문장은 감정과 상징이 어우러지되, 실제 관계의 심리적 흐름을 드러내야 한다.
 
-[데이터]
+규칙:
+1. 문체는 Tumblr의 점성술 블로그처럼 부드럽고 은유적이며 감정선이 있다.
+2. 각 상호작용은 관계의 느낌, 감정의 방향, 배움의 의미를 중심으로 설명한다.
+3. 외행성(천왕성·해왕성·명왕성)의 영향은 ‘변화, 영감, 재생’의 상징으로 표현하라.
+4. 결론 부분에는 이 관계가 서로에게 남길 정서적 의미를 2~3문장으로 요약한다.
+5. 해석 전체는 자연스럽게 이어지는 하나의 이야기처럼 구성한다.
+
+[관계 데이터]
 - 전체 스코어: {req.score}
-- 상위 상호작용:
+- 주요 상호작용:
 {bullet_text}
+
+출력 예시(참고 스타일):
+두 사람의 별자리는 오래된 별빛이 다시 만나는 것처럼 서로를 알아본다.
+태양과 달의 만남은 내면의 중심을 따뜻하게 밝히고, 금성과 화성의 교차는 숨겨진 열정을 일깨운다.
+토성과 목성은 서로의 꿈을 다르게 해석하지만, 그 차이 속에서 성장의 씨앗이 싹튼다.
+천왕성과 해왕성의 전류는 관계에 자유와 신비를 더하고, 명왕성은 서로의 그림자를 비추며 변화의 불을 붙인다.
+결국 이 관계는 서로를 통해 자신을 발견하는 긴 여정이다.
 """
 
+        # GPT 요청
         resp = client.responses.create(
             model="gpt-4o-mini",
             input=prompt,
-            max_output_tokens=500,
-            temperature=0.7,
+            max_output_tokens=900,
+            temperature=0.8,
         )
         return {"reading": resp.output_text}
 
@@ -204,4 +228,3 @@ def generate_reading(req: ReadingReq):
         import traceback
         traceback.print_exc()
         return JSONResponse({"reading": None, "error": str(e)}, status_code=500)
-
