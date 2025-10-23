@@ -198,20 +198,31 @@ def health():
 
 @app.post("/compute-synastry")
 def compute_synastry(req: SynastryReq):
-    tA = to_ts(req.personA.date, req.personA.time, req.personA.tz)
-    tB = to_ts(req.personB.date, req.personB.time, req.personB.tz)
-    longsA = ecliptic_longitudes(tA)
-    longsB = ecliptic_longitudes(tB)
-    aspects = detect_aspects(longsA, longsB)
-    score, scored = score_synastry(aspects)
-    top = scored[:8]
-    summary = summarize(top)
-    return JSONResponse({
-        "score": score,
-        "aspects_top": top,
-        "summary": summary,
-        "notes": "MVP version"
-    })
+    try:
+        tA = to_ts(req.personA.date, req.personA.time, req.personA.tz)
+        tB = to_ts(req.personB.date, req.personB.time, req.personB.tz)
+
+        longsA = ecliptic_longitudes(tA)
+        longsB = ecliptic_longitudes(tB)
+
+        aspects = detect_aspects(longsA, longsB)
+        score, scored = score_synastry(aspects)
+
+        top = scored[:8]
+        summary = summarize(top)
+
+        return JSONResponse({
+            "score": score,
+            "aspects_top": top,
+            "aspects_all_count": len(scored),
+            "longitudes": {"A": longsA, "B": longsB},
+            "summary": summary,
+            "notes": "MVP with outer planets"
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        return JSONResponse({"error": str(e)}, status_code=500)
 
 # ---------- GPT 해석 엔드포인트 ----------
 class ReadingReq(BaseModel):
