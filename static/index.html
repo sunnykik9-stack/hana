@@ -7,9 +7,20 @@
   <link rel="stylesheet" href="/static/styles.css">
 </head>
 <body>
-  <main class="container">
-    <h1>Synastry MVP</h1>
-    <p class="sub">두 사람의 출생 정보를 입력하고 결과를 확인해보세요.</p>
+    <main class="container">
+    <div class="headerbar">
+      <div>
+        <h1>Synastry MVP</h1>
+        <p class="sub">두 사람의 출생 정보를 입력하고 결과를 확인해보세요.</p>
+      </div>
+      <label>
+        <select id="theme" class="select" title="Theme">
+          <option value="">Dusk</option>
+          <option value="theme-aurora">Aurora</option>
+          <option value="theme-blossom">Blossom</option>
+        </select>
+      </label>
+    </div>
 
     <section class="cards">
       <div class="card">
@@ -136,3 +147,16 @@
   </script>
 </body>
 </html>
+  <script>
+    // ... (compute() 함수와 기존 코드 그대로)
+    document.getElementById('btn').addEventListener('click', compute);
+
+    // === 테마 선택 저장/복원 ===
+    const themeSel = document.getElementById('theme');
+    const saved = localStorage.getItem('synastry-theme');
+    if (saved) { document.body.className = saved; themeSel.value = saved; }
+    themeSel.addEventListener('change', () => {
+      document.body.className = themeSel.value;
+      localStorage.setItem('synastry-theme', themeSel.value);
+    });
+  </script>
